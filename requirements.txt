@@ -1,0 +1,27 @@
+
+langchain==0.2.16
+langchain-core==0.2.38
+langchain-community==0.2.16
+
+# Groq integration
+langchain-groq==1.0.0
+
+# Vector store + embeddings (HF)
+faiss-cpu==1.8.0.post1
+sentence-transformers==2.2.2
+
+# PDF loaders / creation
+pymupdf==1.24.9
+pypdf==4.3.1
+fpdf2==2.7.9
+
+# Utilities
+python-dotenv==1.0.1
+
+# FastAPI app
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+aiofiles==23.2.1
+jinja2==3.1.4
+python-multipart==0.0.9
+

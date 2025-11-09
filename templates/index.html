@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Interview Question Creator (Groq)</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    #result, #download { display: none; }
+    .font-large { font-size: 150px; }
+  </style>
+</head>
+<body class="bg-dark">
+  <section>
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-12 text-center p-5 text-white">
+          <h3>Interview Question Creator</h3>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <div class="container">
+      <div class="row">
+        <div class="col-sm-12">
+          <div class="card p-5 shadow border-0 m-3">
+            <div class="mb-3">
+              <label class="form-label">Upload your PDF file here</label>
+              <div class="input-group mb-3">
+                <input type="file" class="form-control" id="pdf-file" accept="application/pdf" />
+                <label class="input-group-text" for="pdf-file">Max No. of Pages is 5</label>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Choose Groq model</label>
+              <select id="model-name" class="form-select">
+                <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (quality)</option>
+                <option value="llama-3.3-8b-instant">llama-3.3-8b-instant (speed)</option>
+                <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+              </select>
+            </div>
+
+            <div class="mb-3 text-end">
+              <button type="button" id="upload-btn" class="btn btn-md btn-success">Generate Q&A</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="result">
+    <div class="container">
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <div class="card shadow border-0 p-3 ms-3">
+            <embed id="view-pdf" src="" width="100%" height="600px" />
+          </div>
+        </div>
+        <div class="col-sm-6">
+          <div class="card shadow border-0 p-5 me-3">
+            <div id="loader" class="text-center">
+              <i class="fa-solid fa-spinner fa-spin-pulse font-large"></i>
+              <div class="mt-3">Generating questions & answers…</div>
+            </div>
+            <div id="download" class="text-center">
+              <div class="d-flex gap-3 justify-content-center">
+                <a href="" id="download-csv" class="btn btn-md btn-warning" download>Download Q&A CSV</a>
+                <a href="" id="download-pdf" class="btn btn-md btn-primary" download>Download Q&A PDF</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://kit.fontawesome.com/1da99de032.js" crossorigin="anonymous"></script>
+  <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+
+  <script>
+    const result      = document.getElementById('result');
+    const loader      = document.getElementById('loader');
+    const download    = document.getElementById('download');
+    const viewPdf     = document.getElementById('view-pdf');
+    const btnCSV      = document.getElementById('download-csv');
+    const btnPDF      = document.getElementById('download-pdf');
+    const uploadBtn   = document.getElementById('upload-btn');
+    const fileInput   = document.getElementById('pdf-file');
+    const modelInput  = document.getElementById('model-name');
+
+    $(document).ready(function () {
+      $("#upload-btn").click(async function (event) {
+        event.preventDefault();
+        try {
+          if (!fileInput.files || !fileInput.files[0]) {
+            return Swal.fire({ icon: 'warning', title: 'No file', text: 'Please select a PDF first.' });
+          }
+          uploadBtn.disabled = true;
+
+          // Enforce 5-page limit using PDF.js
+          const ok = await checkPdfPageLimit(fileInput.files[0], 5);
+          if (!ok) {
+            uploadBtn.disabled = false;
+            return Swal.fire({ icon: 'error', title: 'Too many pages', text: 'Maximum allowed pages is 5.' });
+          }
+
+          const formData = new FormData();
+          formData.append('pdf_file', fileInput.files[0]);
+          formData.append('filename', fileInput.files[0].name);
+
+          const uploadRes = await fetch('/upload', { method: "POST", body: formData });
+          await processUploadResponse(uploadRes);
+        } catch (err) {
+          console.error(err);
+          Swal.fire({ icon: 'error', title: 'Upload failed', text: String(err) });
+          uploadBtn.disabled = false;
+        }
+      });
+    });
+
+    async function processUploadResponse(response){
+      switch (response.status) {
+        case 200: {
+          const json = await response.json();
+          if (json.msg === "error") {
+            await Swal.fire({ icon: 'error', title: 'Oops!', text: 'Maximum number of pages exceeded.' });
+            return location.reload();
+          }
+          result.style.display = "block";
+          loader.style.display = "block";
+          download.style.display = "none";
+
+          viewPdf.setAttribute('src', "/" + json.pdf_filename);
+          viewPdf.setAttribute('preload', 'auto');
+
+          const fd = new FormData();
+          fd.append('pdf_filename', json.pdf_filename);
+          fd.append('model_name', modelInput.value);
+
+          const analyzeRes = await fetch('/analyze', { method: "POST", body: fd });
+          await processAnalyzeResponse(analyzeRes);
+          break;
+        }
+        default:
+          await Swal.fire({ icon: 'error', title: 'Error ' + response.status, text: 'Please contact admin.' });
+          location.reload();
+      }
+    }
+
+    async function processAnalyzeResponse(response){
+      switch (response.status) {
+        case 200: {
+          const json = await response.json();
+          loader.style.display = "none";
+          download.style.display = "block";
+
+          btnCSV.setAttribute('href', "/" + json.output_file_csv);
+          btnCSV.setAttribute('download', json.output_file_csv.split('/').pop());
+
+          btnPDF.setAttribute('href', "/" + json.output_file_pdf);
+          btnPDF.setAttribute('download', json.output_file_pdf.split('/').pop());
+
+          uploadBtn.disabled = false;
+          break;
+        }
+        default:
+          const err = await response.json().catch(() => ({}));
+          await Swal.fire({ icon: 'error', title: 'Analyze failed', text: (err.error || ('HTTP ' + response.status)) });
+          uploadBtn.disabled = false;
+      }
+    }
+
+    // Returns true if pages <= limit
+    async function checkPdfPageLimit(file, limit) {
+      try {
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        return pdf.numPages <= limit;
+      } catch (e) {
+        console.warn("PDF page count check failed:", e);
+        return true; // don't block if detection fails
+      }
+    }
+  </script>
+</body>
+</html>
